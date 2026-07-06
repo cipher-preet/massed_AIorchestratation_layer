@@ -1,0 +1,13 @@
+fastapi>=0.115.0,<1.0.0
+uvicorn[standard]>=0.30.0,<1.0.0
+langchain>=0.3.27,<0.4.0
+langchain-community>=0.3.27,<0.4.0
+langchain-mongodb>=0.6.0,<0.7.0
+langchain-core>=0.3.81,<0.4.0
+langchain-openai>=0.3.35,<0.4.0
+langgraph>=0.2.76,<0.3.0
+mcp>=1.0.0,<2.0.0
+pydantic>=2.7.0,<3.0.0
+pydantic-settings>=2.3.0,<3.0.0
+python-dotenv>=1.0.1,<2.0.0
+pymongo>=4.10.0,<5.0.0
