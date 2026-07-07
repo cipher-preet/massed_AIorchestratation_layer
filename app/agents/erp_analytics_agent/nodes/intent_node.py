@@ -64,30 +64,33 @@ async def intent_node(state: AgentState) -> AgentState:
         return {"intent": "unsupported"}
 
     llm = get_llm()
-    response = await llm.ainvoke(
-        [
-            ("system", INTENT_PROMPT),
-            (
-                "human",
-                json.dumps(
-                    {
-                        "user_request": message,
-                        "chat_history": chat_history[-10:],
-                        "conversation_reference": state.get("conversation_reference"),
-                        "previous_response": {
-                            "kind": state.get("last_response_kind"),
-                            "content": state.get("last_response_content"),
+    try:
+        response = await llm.ainvoke(
+            [
+                ("system", INTENT_PROMPT),
+                (
+                    "human",
+                    json.dumps(
+                        {
+                            "user_request": message,
+                            "chat_history": chat_history[-10:],
+                            "conversation_reference": state.get("conversation_reference"),
+                            "previous_response": {
+                                "kind": state.get("last_response_kind"),
+                                "content": state.get("last_response_content"),
+                            },
                         },
-                    },
-                    default=str,
+                        default=str,
+                    ),
                 ),
-            ),
-        ]
-    )
-    
-    print(f"Intent node response: {response.content}")
-    
-    parsed = extract_json_object(str(response.content))
+            ]
+        )
+        parsed = extract_json_object(str(response.content))
+    except Exception:
+        if _contains_word(message, READ_VERBS):
+            return {"intent": "analytics_query"}
+        return {"intent": "clarification_needed"}
+
     intent = parsed.get("intent", "unsupported")
     if intent not in {"analytics_query", "schema_question", "clarification_needed", "unsupported", "conversation_response"}:
         intent = "unsupported"

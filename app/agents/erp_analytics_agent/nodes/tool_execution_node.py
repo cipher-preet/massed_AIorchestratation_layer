@@ -6,6 +6,17 @@ from app.agents.erp_analytics_agent.state import AgentState
 from app.mcp_client.mcp_tool_registry import call_registered_tool
 
 
+def _clarification_state(question: str, reason: str) -> AgentState:
+    return {
+        "query_plan": {
+            "tool": "clarification_needed",
+            "arguments": {"question": question},
+            "reason": reason,
+        },
+        "persist_chat_history": False,
+    }
+
+
 def _parse_mcp_text_result(result: Dict[str, Any]) -> Dict[str, Any]:
     content = result.get("content")
     if not isinstance(content, list) or not content:
@@ -63,6 +74,10 @@ def _validate_aggregation_operator_keys(value: Any) -> None:
 
 
 PLACEHOLDER_PATTERN = re.compile(r"^\{\{steps\.([A-Za-z0-9_-]+)\.([A-Za-z0-9_.*-]+(?:\.[A-Za-z0-9_.*-]+)*)\}\}$")
+ISO_DATE_STRING_PATTERN = re.compile(
+    r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$"
+)
+DATE_COMPARISON_OPERATORS = {"$gte", "$gt", "$lte", "$lt", "$eq", "$ne"}
 
 
 def _extract_path_parts(value: Any, parts: list[str]) -> Any:
@@ -130,14 +145,51 @@ def _resolve_placeholders(value: Any, step_results: Dict[str, Dict[str, Any]]) -
     return resolved
 
 
-async def _execute_one_step(tool_name: str, arguments: Dict[str, Any]) -> tuple[Dict[str, Any], Dict[str, Any]]:
+def _as_extended_json_date(value: Any) -> Any:
+    if isinstance(value, str) and ISO_DATE_STRING_PATTERN.match(value):
+        return {"$date": value}
+    if isinstance(value, list):
+        return [_as_extended_json_date(item) for item in value]
+    return value
+
+
+def _normalize_date_literals(value: Any) -> Any:
+    if isinstance(value, list):
+        return [_normalize_date_literals(item) for item in value]
+
+    if not isinstance(value, dict):
+        return value
+
+    normalized: Dict[str, Any] = {}
+    for key, child_value in value.items():
+        if key in DATE_COMPARISON_OPERATORS:
+            normalized[key] = _as_extended_json_date(child_value)
+        else:
+            normalized[key] = _normalize_date_literals(child_value)
+    return normalized
+
+
+def _normalize_tool_arguments(tool_name: str, arguments: Dict[str, Any]) -> Dict[str, Any]:
+    if tool_name == "run_find_query":
+        return {**arguments, "filter": _normalize_date_literals(arguments.get("filter") or {})}
     if tool_name == "run_aggregation_query":
-        _validate_aggregation_operator_keys(arguments.get("pipeline"))
-    result = await call_registered_tool(tool_name, arguments)
+        return {**arguments, "pipeline": _normalize_date_literals(arguments.get("pipeline") or [])}
+    return arguments
+
+
+async def _execute_one_step(tool_name: str, arguments: Dict[str, Any]) -> tuple[Dict[str, Any], Dict[str, Any], Dict[str, Any]]:
+    if tool_name not in {"run_find_query", "run_aggregation_query"}:
+        raise ValueError(f"Unsupported analytics tool: {tool_name}")
+    if not isinstance(arguments, dict):
+        raise ValueError("Analytics tool arguments must be an object")
+    normalized_arguments = _normalize_tool_arguments(tool_name, arguments)
+    if tool_name == "run_aggregation_query":
+        _validate_aggregation_operator_keys(normalized_arguments.get("pipeline"))
+    result = await call_registered_tool(tool_name, normalized_arguments)
     parsed_result = _parse_mcp_text_result(result)
     if tool_name == "run_aggregation_query":
-        parsed_result = _normalize_count_result(parsed_result, arguments)
-    return result, parsed_result
+        parsed_result = _normalize_count_result(parsed_result, normalized_arguments)
+    return result, parsed_result, normalized_arguments
 
 
 async def _execute_multi_step_plan(query_plan: Dict[str, Any], state: AgentState) -> AgentState:
@@ -157,11 +209,12 @@ async def _execute_multi_step_plan(query_plan: Dict[str, Any], state: AgentState
         tool_name = step.get("tool")
         arguments = _resolve_placeholders(step.get("arguments") or {}, step_results)
 
-        result, parsed_result = await _execute_one_step(tool_name, arguments)
+        result, parsed_result, normalized_arguments = await _execute_one_step(tool_name, arguments)
         step_results[step_id] = parsed_result
         final_result = result
         final_parsed_result = parsed_result
-        tool_calls.append({"tool": tool_name, "arguments": arguments, "reason": step.get("reason"), "stepId": step_id})
+        step["arguments"] = normalized_arguments
+        tool_calls.append({"tool": tool_name, "arguments": normalized_arguments, "reason": step.get("reason"), "stepId": step_id})
 
     return {
         "tool_result": final_result,
@@ -183,10 +236,23 @@ async def tool_execution_node(state: AgentState) -> AgentState:
         if tool_name == "multi_step_plan":
             return await _execute_multi_step_plan(query_plan, state)
 
-        result, parsed_result = await _execute_one_step(tool_name, arguments)
+        result, parsed_result, normalized_arguments = await _execute_one_step(tool_name, arguments)
 
         tool_calls = list(state.get("tool_calls", []))
-        tool_calls.append({"tool": tool_name, "arguments": arguments, "reason": query_plan.get("reason")})
-        return {"tool_result": result, "parsed_tool_result": parsed_result, "tool_calls": tool_calls}
+        tool_calls.append({"tool": tool_name, "arguments": normalized_arguments, "reason": query_plan.get("reason")})
+        return {
+            "tool_result": result,
+            "parsed_tool_result": parsed_result,
+            "tool_calls": tool_calls,
+            "query_plan": {**query_plan, "arguments": normalized_arguments},
+        }
+    except ValueError:
+        return _clarification_state(
+            "Could you clarify the exact ERP data and filter you want so I can build a valid query?",
+            "The planned analytics query was incomplete or unsafe.",
+        )
     except Exception:
-        return {"error": "Could not execute the planned analytics query."}
+        return _clarification_state(
+            "I could not run that query safely. Could you clarify the record type, filter, and date range you need?",
+            "The planned analytics query failed during execution.",
+        )

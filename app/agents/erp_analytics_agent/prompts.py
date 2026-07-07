@@ -19,6 +19,7 @@ Rules:
 - Treat read words like get, give, show, list, fetch, find, search, count, compare, summarize, and analyze as read-only analytics.
 - Do not mark a request unsupported just because phrasing is informal or the exact collection/field is unclear; use clarification_needed when one detail is missing.
 - If ambiguous but not a write/mutation request, choose analytics_query or clarification_needed.
+- If the user request has no clear ERP entity, metric, filter, or action after using chat_history, choose clarification_needed and ask what data they want to see.
 
 Return strict JSON only:
 {"intent":"analytics_query","reason":"short reason"}
@@ -44,6 +45,8 @@ Rules:
 - Never invent collection names or field names.
 - Treat the schema catalog as the contract. Do not create generic helper fields such as month, year, technician, name, status, total_days, or assignedEngineer unless those exact fields exist in the catalog.
 - If required fields are missing, return {"tool":"clarification_needed","arguments":{"question":"one concise clarification question"},"reason":"why"}.
+- If multiple collections, date fields, status fields, or person/customer/vendor fields could match the words in the user request, ask one clarification question instead of guessing.
+- Make the clarification question specific to the missing decision, for example which entity, which date range, which status, or which person/name field.
 - Prefer run_aggregation_query for metrics, grouping, totals, joins, and calculations.
 - Prefer run_find_query for simple list/detail requests such as "give/show/list all <collection> <field>".
 - Prefer one run_aggregation_query with $lookup when MongoDB relationships allow the whole answer to be produced safely in one pipeline.
@@ -57,7 +60,9 @@ Rules:
 
 Database-query rules:
 - Plan like a MongoDB engineer, not a generic report writer.
-- For dates and months, use real date/datetime fields from the schema. If the user says a month such as June, do not filter on {"month": 6} unless the schema has an actual month field. Prefer UTC date boundaries with $gte and $lt, for example June 2026 is {"$gte":"2026-06-01T00:00:00Z","$lt":"2026-07-01T00:00:00Z"}.
+- For dates and months, use real date/datetime fields from the schema. If the user says a month such as June, do not filter on {"month": 6} unless the schema has an actual month field. Prefer UTC date boundaries with $gte and $lt. Use Extended JSON date literals for date comparisons, for example June 2026 is {"$gte":{"$date":"2026-06-01T00:00:00Z"},"$lt":{"$date":"2026-07-01T00:00:00Z"}}.
+- For "today", "tomorrow", "yesterday", or a specific day, create an inclusive start and exclusive next-day UTC boundary using {"$date":"..."} values. Never compare date fields to plain strings.
+- In run_find_query filters and run_aggregation_query pipelines, every ISO datetime used with $gte, $gt, $lte, $lt, $eq, or $ne must be an Extended JSON date object, never a plain string.
 - If a month/day is given without a year, use current_utc_datetime to infer the current year only when the wording implies the current period. If the question could mean any year or all-time, ask one clarification question.
 - For "completed" service questions, identify the actual completion/status/date fields in schema_catalog. Do not assume a field named status, completedAt, month, or assignedEngineer.
 - For "most", "highest", "longest", "top", or "maximum", group by the real technician/user/reference id field, compute the requested metric, sort descending, and limit 1.
@@ -76,6 +81,7 @@ Before returning:
 - Check every collection and field exists in schema_catalog or relationship_map.
 - Check every aggregation operator starts with "$" and has no whitespace.
 - Check the pipeline answers the exact business question, including joins needed for names.
+- Check date comparisons do not contain plain ISO datetime strings such as "2026-07-07T00:00:00Z"; they must be {"$date":"2026-07-07T00:00:00Z"}.
 - If any check fails, return clarification_needed instead of guessing.
 
 Response shape:
@@ -98,7 +104,8 @@ Rules:
 - Mark multi_step when one entity must be resolved first by name/code/text before another collection can be queried by its id/reference.
 - Mark multi_step for requests like "clients inside Abu Dhabi area" when the area name must be looked up before clients can be filtered by area id.
 - If a single aggregation with $lookup can answer the request, still list the logical tasks but set complexity to "simple" and recommended_plan_type to "aggregation".
-- If the request is missing one required business constraint, ask one concise clarification question.
+- If the request is missing one required business constraint, asks for undefined "data" or a "report", or could map to several collections/fields, ask one concise clarification question.
+- Ask the smallest useful question and mention the exact missing detail, such as entity, metric, date range, status, customer/client/vendor, technician/user, or location.
 - Never invent collection names, field names, ids, or relationships.
 
 Response shape:

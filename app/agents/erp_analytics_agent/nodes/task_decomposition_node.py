@@ -16,11 +16,21 @@ async def task_decomposition_node(state: AgentState) -> AgentState:
         "schema_catalog": state.get("schema_catalog"),
         "relationship_map": state.get("relationship_map"),
     }
-    response = await llm.ainvoke(
-        [
-            ("system", TASK_DECOMPOSITION_PROMPT),
-            ("human", json.dumps(prompt_context, default=str)),
-        ]
-    )
-    parsed = extract_json_object(str(response.content))
+    try:
+        response = await llm.ainvoke(
+            [
+                ("system", TASK_DECOMPOSITION_PROMPT),
+                ("human", json.dumps(prompt_context, default=str)),
+            ]
+        )
+        parsed = extract_json_object(str(response.content))
+    except Exception:
+        parsed = {
+            "complexity": "clarification_needed",
+            "recommended_plan_type": "clarification",
+            "tasks": [],
+            "entities": [],
+            "question": "Which ERP data should I use, and what filter or time period should apply?",
+            "reason": "The request could not be decomposed safely.",
+        }
     return {"task_decomposition": parsed}

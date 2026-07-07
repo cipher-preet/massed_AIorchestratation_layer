@@ -9,6 +9,26 @@ from app.mcp_client.mcp_tool_registry import list_tools
 from app.utils.json_utils import extract_json_object
 
 
+def _clarification_plan(question: str, reason: str) -> AgentState:
+    return {
+        "query_plan": {
+            "tool": "clarification_needed",
+            "arguments": {"question": question},
+            "reason": reason,
+        }
+    }
+
+
+def _is_valid_plan(plan: dict) -> bool:
+    tool = plan.get("tool")
+    if tool in {"run_find_query", "run_aggregation_query", "schema_answer", "clarification_needed"}:
+        return isinstance(plan.get("arguments"), dict)
+    if tool == "multi_step_plan":
+        steps = plan.get("steps")
+        return isinstance(steps, list) and bool(steps)
+    return False
+
+
 async def query_planner_node(state: AgentState) -> AgentState:
     if state.get("intent") == "schema_question":
         return {
@@ -31,11 +51,24 @@ async def query_planner_node(state: AgentState) -> AgentState:
         "task_decomposition": state.get("task_decomposition"),
         "available_mcp_tools": available_tools,
     }
-    response = await llm.ainvoke(
-        [
-            ("system", QUERY_PLANNER_PROMPT),
-            ("human", json.dumps(prompt_context, default=str)),
-        ]
-    )
-    parsed = extract_json_object(str(response.content))
+    try:
+        response = await llm.ainvoke(
+            [
+                ("system", QUERY_PLANNER_PROMPT),
+                ("human", json.dumps(prompt_context, default=str)),
+            ]
+        )
+        parsed = extract_json_object(str(response.content))
+    except Exception:
+        return _clarification_plan(
+            "Could you clarify exactly which ERP record, metric, filter, or time period you want?",
+            "The planner could not decode the analytics request safely.",
+        )
+
+    if not _is_valid_plan(parsed):
+        return _clarification_plan(
+            "Could you clarify the ERP data you want and any required filter, name, status, or date range?",
+            "The planner returned an incomplete analytics plan.",
+        )
+
     return {"query_plan": parsed}

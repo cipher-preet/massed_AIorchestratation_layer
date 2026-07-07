@@ -140,6 +140,12 @@ async def response_formatter_node(state: AgentState) -> AgentState:
             "I can help with read-only ERP analytics questions, but I cannot complete that request.",
         )
 
+    if state.get("error"):
+        return _without_chat_history(
+            "I could not access the ERP analytics data right now. Please try again, or ask with a specific record type, filter, and date range.",
+            "error",
+        )
+
     if intent == "clarification_needed" or query_plan.get("tool") == "clarification_needed":
         question = query_plan.get("arguments", {}).get("question")
         return _without_chat_history(question or "Please add the missing detail so I can answer accurately.", "clarification")

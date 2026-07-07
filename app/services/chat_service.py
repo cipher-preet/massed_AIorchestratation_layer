@@ -50,7 +50,7 @@ class ChatService:
             request.message,
             state.get("answer") or "I could not complete this analytics request.",
         )
-        error = None if success else "The analytics request could not be completed."
+        error = None if success else state.get("error") or "The analytics request could not be completed."
 
         if conversation_id and self._should_persist_history(state):
             chat_history_store.append_turn(
