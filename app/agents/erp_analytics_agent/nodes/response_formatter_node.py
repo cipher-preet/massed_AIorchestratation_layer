@@ -144,6 +144,11 @@ async def response_formatter_node(state: AgentState) -> AgentState:
         question = query_plan.get("arguments", {}).get("question")
         return _without_chat_history(question or "Please add the missing detail so I can answer accurately.", "clarification")
 
+    task_decomposition = state.get("task_decomposition") or {}
+    if task_decomposition.get("complexity") == "clarification_needed":
+        question = task_decomposition.get("question")
+        return _without_chat_history(question or "Please add the missing detail so I can answer accurately.", "clarification")
+
     count_answer = _format_count_answer(query_plan, state.get("parsed_tool_result"))
     if count_answer is not None:
         return _with_chat_history(state, count_answer)
@@ -152,6 +157,7 @@ async def response_formatter_node(state: AgentState) -> AgentState:
     formatter_context = {
         "user_message": state.get("message"),
         "chat_history": (state.get("chat_history") or [])[-10:],
+        "conversation_reference": state.get("conversation_reference"),
         "previous_response": {
             "kind": state.get("last_response_kind"),
             "content": state.get("last_response_content"),
@@ -159,6 +165,7 @@ async def response_formatter_node(state: AgentState) -> AgentState:
         "intent": intent,
         "schema_catalog": state.get("schema_catalog") if intent == "schema_question" else None,
         "relationship_map": state.get("relationship_map") if intent == "schema_question" else None,
+        "task_decomposition": state.get("task_decomposition"),
         "query_plan": query_plan,
         "parsed_tool_result": state.get("parsed_tool_result"),
         "tool_result": state.get("tool_result"),

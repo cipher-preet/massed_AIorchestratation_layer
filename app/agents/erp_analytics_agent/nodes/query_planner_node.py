@@ -25,8 +25,10 @@ async def query_planner_node(state: AgentState) -> AgentState:
         "user_message": state["message"],
         "current_utc_datetime": datetime.now(timezone.utc).isoformat(),
         "chat_history": (state.get("chat_history") or [])[-10:],
+        "conversation_reference": state.get("conversation_reference"),
         "schema_catalog": state.get("schema_catalog"),
         "relationship_map": state.get("relationship_map"),
+        "task_decomposition": state.get("task_decomposition"),
         "available_mcp_tools": available_tools,
     }
     response = await llm.ainvoke(

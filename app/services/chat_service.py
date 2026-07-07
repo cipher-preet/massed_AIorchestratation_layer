@@ -28,6 +28,9 @@ class ChatService:
             return False
         if state.get("intent") == "clarification_needed":
             return False
+        task_decomposition = state.get("task_decomposition") or {}
+        if task_decomposition.get("complexity") == "clarification_needed":
+            return False
         query_plan = state.get("query_plan") or {}
         return query_plan.get("tool") != "clarification_needed"
 
@@ -38,6 +41,8 @@ class ChatService:
         metadata = {
             "conversationId": conversation_id,
             "intent": state.get("intent"),
+            "conversationReference": state.get("conversation_reference"),
+            "taskDecomposition": state.get("task_decomposition"),
             "queryPlan": state.get("query_plan"),
             "resultStatus": state.get("result_status"),
         }

@@ -73,6 +73,7 @@ async def intent_node(state: AgentState) -> AgentState:
                     {
                         "user_request": message,
                         "chat_history": chat_history[-10:],
+                        "conversation_reference": state.get("conversation_reference"),
                         "previous_response": {
                             "kind": state.get("last_response_kind"),
                             "content": state.get("last_response_content"),

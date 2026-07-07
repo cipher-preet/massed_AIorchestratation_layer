@@ -6,9 +6,11 @@ class AgentState(TypedDict, total=False):
     space_id: str
     message: str
     conversation_id: Optional[str]
+    conversation_reference: Optional[Dict[str, Any]]
     intent: Optional[str]
     schema_catalog: Optional[Dict[str, Any]]
     relationship_map: Optional[Dict[str, Any]]
+    task_decomposition: Optional[Dict[str, Any]]
     query_plan: Optional[Dict[str, Any]]
     tool_result: Optional[Dict[str, Any]]
     parsed_tool_result: Optional[Dict[str, Any]]

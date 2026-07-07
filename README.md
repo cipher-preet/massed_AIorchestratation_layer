@@ -114,8 +114,10 @@ curl -X POST http://localhost:8000/api/v1/ai/chat ^
 
 ```text
 START
+  -> ConversationReferenceNode
   -> IntentNode
   -> SchemaContextNode
+  -> TaskDecompositionNode
   -> QueryPlannerNode
   -> ToolExecutionNode
   -> ResultVerifierNode
@@ -124,6 +126,9 @@ START
 ```
 
 Conditional routes send clarification, unsupported requests, and safe errors directly to the response formatter.
+Schema questions skip task decomposition and go straight from schema context to query planning.
+
+Complex analytics requests can be decomposed into dependent read-only steps. For example, a request for clients in an area can first resolve the area record and then use the resolved `_id` values in the client query.
 
 ## Safety Rules
 
