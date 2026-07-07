@@ -1,7 +1,9 @@
 import json
+from datetime import datetime, timezone
 
 from app.agents.erp_analytics_agent.prompts import QUERY_PLANNER_PROMPT
 from app.agents.erp_analytics_agent.state import AgentState
+from app.config.settings import settings
 from app.core.llm import get_llm
 from app.mcp_client.mcp_tool_registry import list_tools
 from app.utils.json_utils import extract_json_object
@@ -17,10 +19,11 @@ async def query_planner_node(state: AgentState) -> AgentState:
             }
         }
 
-    llm = get_llm()
+    llm = get_llm(model=settings.openai_planner_model)
     available_tools = await list_tools()
     prompt_context = {
         "user_message": state["message"],
+        "current_utc_datetime": datetime.now(timezone.utc).isoformat(),
         "chat_history": (state.get("chat_history") or [])[-10:],
         "schema_catalog": state.get("schema_catalog"),
         "relationship_map": state.get("relationship_map"),

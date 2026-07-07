@@ -46,6 +46,21 @@ def _normalize_count_result(parsed: Dict[str, Any], arguments: Dict[str, Any]) -
     return parsed
 
 
+def _validate_aggregation_operator_keys(value: Any) -> None:
+    if isinstance(value, list):
+        for item in value:
+            _validate_aggregation_operator_keys(item)
+        return
+
+    if not isinstance(value, dict):
+        return
+
+    for key, child_value in value.items():
+        if isinstance(key, str) and key.strip().startswith("$") and key != key.strip():
+            raise ValueError(f"Invalid MongoDB operator key: {key!r}")
+        _validate_aggregation_operator_keys(child_value)
+
+
 async def tool_execution_node(state: AgentState) -> AgentState:
     query_plan = state.get("query_plan") or {}
     tool_name = query_plan.get("tool")
@@ -55,6 +70,8 @@ async def tool_execution_node(state: AgentState) -> AgentState:
         return {}
 
     try:
+        if tool_name == "run_aggregation_query":
+            _validate_aggregation_operator_keys(arguments.get("pipeline"))
         result = await call_registered_tool(tool_name, arguments)
         parsed_result = _parse_mcp_text_result(result)
         if tool_name == "run_aggregation_query":
