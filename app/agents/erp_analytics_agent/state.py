@@ -8,6 +8,7 @@ class AgentState(TypedDict, total=False):
     conversation_id: Optional[str]
     conversation_reference: Optional[Dict[str, Any]]
     intent: Optional[str]
+    schema_domain: Optional[Dict[str, Any]]
     schema_catalog: Optional[Dict[str, Any]]
     relationship_map: Optional[Dict[str, Any]]
     task_decomposition: Optional[Dict[str, Any]]

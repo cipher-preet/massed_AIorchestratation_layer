@@ -37,6 +37,19 @@ def _format_count_answer(query_plan: Dict[str, Any], parsed_result: Dict[str, An
     return None
 
 
+def _has_executed_query(query_plan: Dict[str, Any], state: AgentState) -> bool:
+    tool = query_plan.get("tool")
+    if tool not in {"run_find_query", "run_aggregation_query", "multi_step_plan"}:
+        return False
+    return bool(state.get("parsed_tool_result") or state.get("tool_result") or query_plan.get("step_results"))
+
+
+def _effective_intent(state: AgentState, query_plan: Dict[str, Any]) -> str | None:
+    if _has_executed_query(query_plan, state):
+        return "analytics_query"
+    return state.get("intent")
+
+
 def _with_chat_history(state: AgentState, answer: str, response_kind: str = "answer") -> AgentState:
     history = list(state.get("chat_history") or [])
     history.extend(
@@ -48,6 +61,8 @@ def _with_chat_history(state: AgentState, answer: str, response_kind: str = "ans
     return {
         "answer": answer,
         "chat_history": history,
+        "persist_chat_history": True,
+        "intent": _effective_intent(state, state.get("query_plan") or {}),
         "last_response_kind": response_kind,
         "last_response_content": answer,
     }
@@ -128,8 +143,8 @@ async def _format_conversation_response(state: AgentState) -> AgentState:
 
 
 async def response_formatter_node(state: AgentState) -> AgentState:
-    intent = state.get("intent")
     query_plan = state.get("query_plan") or {}
+    intent = _effective_intent(state, query_plan)
 
     if intent == "conversation_response":
         return await _format_conversation_response(state)
@@ -146,14 +161,29 @@ async def response_formatter_node(state: AgentState) -> AgentState:
             "error",
         )
 
-    if intent == "clarification_needed" or query_plan.get("tool") == "clarification_needed":
+    if query_plan.get("tool") == "clarification_needed":
         question = query_plan.get("arguments", {}).get("question")
-        return _without_chat_history(question or "Please add the missing detail so I can answer accurately.", "clarification")
+        return _with_chat_history(
+            state,
+            question or "Please add the missing detail so I can answer accurately.",
+            "clarification",
+        )
 
     task_decomposition = state.get("task_decomposition") or {}
     if task_decomposition.get("complexity") == "clarification_needed":
         question = task_decomposition.get("question")
-        return _without_chat_history(question or "Please add the missing detail so I can answer accurately.", "clarification")
+        return _with_chat_history(
+            state,
+            question or "Please add the missing detail so I can answer accurately.",
+            "clarification",
+        )
+
+    if state.get("intent") == "clarification_needed" and not _has_executed_query(query_plan, state):
+        return _with_chat_history(
+            state,
+            "Which ERP data should I use, and what filter or time period should apply?",
+            "clarification",
+        )
 
     count_answer = _format_count_answer(query_plan, state.get("parsed_tool_result"))
     if count_answer is not None:
@@ -169,6 +199,7 @@ async def response_formatter_node(state: AgentState) -> AgentState:
             "content": state.get("last_response_content"),
         },
         "intent": intent,
+        "schema_domain": state.get("schema_domain"),
         "schema_catalog": state.get("schema_catalog") if intent == "schema_question" else None,
         "relationship_map": state.get("relationship_map") if intent == "schema_question" else None,
         "task_decomposition": state.get("task_decomposition"),

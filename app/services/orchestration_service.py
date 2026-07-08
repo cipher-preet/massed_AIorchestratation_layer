@@ -35,6 +35,7 @@ class OrchestrationService:
             "conversation_id": conversation_id,
             "conversation_reference": None,
             "intent": None,
+            "schema_domain": None,
             "schema_catalog": None,
             "relationship_map": None,
             "task_decomposition": None,

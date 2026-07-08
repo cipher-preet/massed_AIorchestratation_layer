@@ -7,12 +7,33 @@ async def list_tools() -> List[Dict[str, Any]]:
     return await node_mcp_client.list_tools()
 
 
+async def _has_tool(tool_name: str) -> bool:
+    tools = await list_tools()
+    return any(tool.get("name") == tool_name for tool in tools)
+
+
 async def get_schema_catalog() -> Dict[str, Any]:
     return await node_mcp_client.call_tool("get_schema_catalog", {})
 
 
+async def get_schema_catalog_by_domain(domain: str) -> Dict[str, Any]:
+    if await _has_tool("get_schema_catalog_by_domain"):
+        return await node_mcp_client.call_tool("get_schema_catalog_by_domain", {"domain": domain})
+    if await _has_tool("get_schema_catalog_for_domain"):
+        return await node_mcp_client.call_tool("get_schema_catalog_for_domain", {"domain": domain})
+    return await get_schema_catalog()
+
+
 async def get_relationship_map() -> Dict[str, Any]:
     return await node_mcp_client.call_tool("get_relationship_map", {})
+
+
+async def get_relationship_map_by_domain(domain: str) -> Dict[str, Any]:
+    if await _has_tool("get_relationship_map_by_domain"):
+        return await node_mcp_client.call_tool("get_relationship_map_by_domain", {"domain": domain})
+    if await _has_tool("get_relationship_map_for_domain"):
+        return await node_mcp_client.call_tool("get_relationship_map_for_domain", {"domain": domain})
+    return await get_relationship_map()
 
 
 async def describe_collection(collectionName: str) -> Dict[str, Any]:
@@ -48,7 +69,9 @@ async def run_aggregation_query(collectionName: str, pipeline: List[Dict[str, An
 async def call_registered_tool(tool_name: str, arguments: Dict[str, Any]) -> Dict[str, Any]:
     allowed_tools = {
         "get_schema_catalog": get_schema_catalog,
+        "get_schema_catalog_by_domain": get_schema_catalog_by_domain,
         "get_relationship_map": get_relationship_map,
+        "get_relationship_map_by_domain": get_relationship_map_by_domain,
         "describe_collection": describe_collection,
         "run_find_query": run_find_query,
         "run_aggregation_query": run_aggregation_query,

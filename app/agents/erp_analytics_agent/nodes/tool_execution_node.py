@@ -78,6 +78,39 @@ ISO_DATE_STRING_PATTERN = re.compile(
     r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$"
 )
 DATE_COMPARISON_OPERATORS = {"$gte", "$gt", "$lte", "$lt", "$eq", "$ne"}
+OBJECT_ID_STRING_PATTERN = re.compile(r"^[a-fA-F0-9]{24}$")
+OBJECT_ID_FIELD_NAMES = {
+    "_id",
+    "id",
+    "technician",
+    "technicians",
+    "branch",
+    "branches",
+    "client",
+    "clients",
+    "customer",
+    "customers",
+    "vendor",
+    "vendors",
+    "user",
+    "users",
+    "employee",
+    "employees",
+    "engineer",
+    "engineers",
+    "staff",
+    "area",
+    "areas",
+    "space",
+    "company",
+    "organization",
+    "createdby",
+    "updatedby",
+    "assignedto",
+    "assigneduser",
+    "assignedtechnician",
+}
+ID_MATCH_OPERATORS = {"$eq", "$ne", "$in", "$nin"}
 
 
 def _extract_path_parts(value: Any, parts: list[str]) -> Any:
@@ -169,11 +202,92 @@ def _normalize_date_literals(value: Any) -> Any:
     return normalized
 
 
+def _is_object_id_field(field_name: str | None) -> bool:
+    if not field_name:
+        return False
+
+    normalized = field_name.rsplit(".", 1)[-1].replace("_", "").replace("-", "").lower()
+    return (
+        normalized in OBJECT_ID_FIELD_NAMES
+        or normalized.endswith("id")
+        or normalized.endswith("ids")
+        or normalized.endswith("ref")
+        or normalized.endswith("refs")
+    )
+
+
+def _as_extended_json_object_id(value: Any, field_name: str | None) -> Any:
+    if not _is_object_id_field(field_name):
+        return value
+
+    if isinstance(value, dict):
+        if set(value.keys()) == {"$oid"}:
+            return value
+        return _normalize_object_id_literals(value, field_name)
+
+    if isinstance(value, list):
+        return [_as_extended_json_object_id(item, field_name) for item in value]
+
+    if isinstance(value, str) and OBJECT_ID_STRING_PATTERN.match(value):
+        return {"$oid": value}
+
+    return value
+
+
+def _field_name_from_expression(value: Any) -> str | None:
+    if isinstance(value, str) and value.startswith("$") and not value.startswith("$$"):
+        return value.lstrip("$")
+    return None
+
+
+def _normalize_object_id_literals(value: Any, field_name: str | None = None) -> Any:
+    if isinstance(value, list):
+        return [_normalize_object_id_literals(item, field_name) for item in value]
+
+    if not isinstance(value, dict):
+        return _as_extended_json_object_id(value, field_name)
+
+    if set(value.keys()) == {"$oid"}:
+        return value
+
+    normalized: Dict[str, Any] = {}
+    for key, child_value in value.items():
+        if key in {"$date", "$regex", "$options"}:
+            normalized[key] = child_value
+            continue
+
+        if key.startswith("$"):
+            expression_field_name = (
+                _field_name_from_expression(child_value[0])
+                if key in ID_MATCH_OPERATORS and isinstance(child_value, list) and child_value
+                else None
+            )
+            if expression_field_name:
+                normalized[key] = [
+                    item if index == 0 else _as_extended_json_object_id(item, expression_field_name)
+                    for index, item in enumerate(child_value)
+                ]
+                continue
+            if key in ID_MATCH_OPERATORS:
+                normalized[key] = _as_extended_json_object_id(child_value, field_name)
+            else:
+                normalized[key] = _normalize_object_id_literals(child_value, field_name)
+            continue
+
+        normalized[key] = _normalize_object_id_literals(child_value, key)
+
+    return normalized
+
+
 def _normalize_tool_arguments(tool_name: str, arguments: Dict[str, Any]) -> Dict[str, Any]:
     if tool_name == "run_find_query":
-        return {**arguments, "filter": _normalize_date_literals(arguments.get("filter") or {})}
+        normalized_filter = _normalize_date_literals(arguments.get("filter") or {})
+        normalized_filter = _normalize_object_id_literals(normalized_filter)
+        return {**arguments, "filter": normalized_filter}
     if tool_name == "run_aggregation_query":
-        return {**arguments, "pipeline": _normalize_date_literals(arguments.get("pipeline") or [])}
+        normalized_pipeline = _normalize_date_literals(arguments.get("pipeline") or [])
+        normalized_pipeline = _normalize_object_id_literals(normalized_pipeline)
+        return {**arguments, "pipeline": normalized_pipeline}
     return arguments
 
 

@@ -34,6 +34,17 @@ READ_VERBS = {
     "display",
     "retrieve",
 }
+DETAIL_TERMS = {
+    "detail",
+    "details",
+    "profile",
+    "profiles",
+    "record",
+    "records",
+    "data",
+    "info",
+    "information",
+}
 
 GREETING_MESSAGES = {
     "hello",
@@ -53,6 +64,12 @@ def _is_simple_greeting(message: str) -> bool:
     return normalized in GREETING_MESSAGES
 
 
+def _is_direct_read_request(message: str) -> bool:
+    return _contains_word(message, READ_VERBS) and (
+        _contains_word(message, DETAIL_TERMS) or bool(re.search(r"\ball\b", message, re.IGNORECASE))
+    )
+
+
 async def intent_node(state: AgentState) -> AgentState:
     message = state["message"]
     chat_history = state.get("chat_history") or []
@@ -62,6 +79,9 @@ async def intent_node(state: AgentState) -> AgentState:
 
     if _contains_word(message, WRITE_VERBS):
         return {"intent": "unsupported"}
+
+    if _is_direct_read_request(message):
+        return {"intent": "analytics_query"}
 
     llm = get_llm()
     try:

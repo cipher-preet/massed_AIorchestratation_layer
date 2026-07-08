@@ -7,15 +7,16 @@ from app.agents.erp_analytics_agent.nodes.query_planner_node import query_planne
 from app.agents.erp_analytics_agent.nodes.response_formatter_node import response_formatter_node
 from app.agents.erp_analytics_agent.nodes.result_verifier_node import result_verifier_node
 from app.agents.erp_analytics_agent.nodes.schema_context_node import schema_context_node
+from app.agents.erp_analytics_agent.nodes.schema_domain_node import schema_domain_node
 from app.agents.erp_analytics_agent.nodes.task_decomposition_node import task_decomposition_node
 from app.agents.erp_analytics_agent.nodes.tool_execution_node import tool_execution_node
 from app.agents.erp_analytics_agent.state import AgentState
 
 
 def route_after_intent(state: AgentState) -> str:
-    if state.get("intent") in {"clarification_needed", "unsupported", "conversation_response"} or state.get("error"):
+    if state.get("intent") in {"unsupported", "conversation_response"} or state.get("error"):
         return "response_formatter_node"
-    return "schema_context_node"
+    return "schema_domain_node"
 
 
 def route_after_schema(state: AgentState) -> str:
@@ -55,6 +56,7 @@ def build_graph():
     graph = StateGraph(AgentState)
     graph.add_node("conversation_reference_node", conversation_reference_node)
     graph.add_node("intent_node", intent_node)
+    graph.add_node("schema_domain_node", schema_domain_node)
     graph.add_node("schema_context_node", schema_context_node)
     graph.add_node("task_decomposition_node", task_decomposition_node)
     graph.add_node("query_planner_node", query_planner_node)
@@ -65,6 +67,7 @@ def build_graph():
     graph.add_edge(START, "conversation_reference_node")
     graph.add_edge("conversation_reference_node", "intent_node")
     graph.add_conditional_edges("intent_node", route_after_intent)
+    graph.add_edge("schema_domain_node", "schema_context_node")
     graph.add_conditional_edges("schema_context_node", route_after_schema)
     graph.add_conditional_edges("task_decomposition_node", route_after_decomposition)
     graph.add_conditional_edges("query_planner_node", route_after_planner)
