@@ -41,6 +41,7 @@ Rules:
 - Do not generate write queries or mutation operations.
 - Use chat_history only to resolve follow-up references, omitted entities, or omitted time ranges in the latest user question.
 - Use conversation_reference to resolve references from the previous turn before planning, but never use it as database data.
+- If conversation_reference.resolved_user_message is present, treat it as the clarified latest request and do not repeat the same clarification question that the user already answered.
 - Use task_decomposition to decide whether the request needs one direct query, one aggregation with $lookup, or multiple dependent tool calls.
 - Prefer collections in the active schema_domain. Smaller domain context is authoritative for this turn.
 - Respect task_decomposition.target_collection_hint and requested_entity_terms when present. The final query must target that collection or an aggregation rooted in that collection, unless schema_catalog proves it does not exist.
@@ -122,6 +123,7 @@ Rules:
 - Mark multi_step for requests like "clients inside Abu Dhabi area" when the area name must be looked up before clients can be filtered by area id.
 - If a single aggregation with $lookup can answer the request, still list the logical tasks but set complexity to "simple" and recommended_plan_type to "aggregation".
 - If the request is missing one required business constraint, asks for undefined "data" or a "report", or could map to several collections/fields, ask one concise clarification question.
+- If the latest message is a short answer to the previous clarification and conversation_reference.resolved_user_message is present, decompose that resolved request instead of asking the previous clarification again.
 - Requests for all details/records/data/info of a clear entity are not missing a business constraint. Mark them simple with recommended_plan_type "find". Do not ask for a filter or time period.
 - Ask the smallest useful question and mention the exact missing detail, such as entity, metric, date range, status, customer/client/vendor, technician/user, or location.
 - If the entity is clear and the only missing detail is a branch filter value, do not stop immediately when a branch collection is available. Recommend a dependent-tools plan to list available branch choices first, then ask the user to choose a branch name or code.

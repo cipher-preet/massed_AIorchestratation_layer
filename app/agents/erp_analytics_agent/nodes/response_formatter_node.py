@@ -4,6 +4,14 @@ from typing import Any, Dict
 
 from app.agents.erp_analytics_agent.prompts import RESPONSE_FORMATTER_PROMPT
 from app.agents.erp_analytics_agent.state import AgentState
+from app.config.settings import settings
+from app.core.cost_optimization import (
+    compact_chat_history,
+    compact_conversation_reference,
+    compact_prompt_value,
+    compact_text,
+    invoke_llm,
+)
 from app.core.llm import get_llm
 
 
@@ -109,7 +117,7 @@ def _conversation_messages(state: AgentState) -> list[tuple[str, str]]:
         )
     ]
 
-    for item in (state.get("chat_history") or [])[-10:]:
+    for item in compact_chat_history(state.get("chat_history")):
         role = item.get("type")
         content = item.get("content")
         if role not in {"human", "ai"} or not isinstance(content, str) or not content:
@@ -138,7 +146,7 @@ async def _format_conversation_response(state: AgentState) -> AgentState:
         )
 
     llm = get_llm()
-    response = await llm.ainvoke(_conversation_messages(state))
+    response = await invoke_llm(llm, _conversation_messages(state), operation="conversation_response")
     return _with_chat_history(state, _clean_conversation_answer(str(response.content)), response_kind="conversation")
 
 
@@ -192,27 +200,39 @@ async def response_formatter_node(state: AgentState) -> AgentState:
     llm = get_llm()
     formatter_context = {
         "user_message": state.get("message"),
-        "chat_history": (state.get("chat_history") or [])[-10:],
-        "conversation_reference": state.get("conversation_reference"),
+        "chat_history": compact_chat_history(state.get("chat_history")),
+        "conversation_reference": compact_conversation_reference(state.get("conversation_reference")),
         "previous_response": {
             "kind": state.get("last_response_kind"),
-            "content": state.get("last_response_content"),
+            "content": compact_text(state.get("last_response_content"), settings.ai_chat_history_message_chars),
         },
         "intent": intent,
         "schema_domain": state.get("schema_domain"),
-        "schema_catalog": state.get("schema_catalog") if intent == "schema_question" else None,
-        "relationship_map": state.get("relationship_map") if intent == "schema_question" else None,
+        "schema_catalog": (
+            compact_prompt_value(state.get("schema_catalog"), settings.ai_schema_prompt_max_chars)
+            if intent == "schema_question"
+            else None
+        ),
+        "relationship_map": (
+            compact_prompt_value(state.get("relationship_map"), settings.ai_schema_prompt_max_chars)
+            if intent == "schema_question"
+            else None
+        ),
         "task_decomposition": state.get("task_decomposition"),
         "query_plan": query_plan,
-        "parsed_tool_result": state.get("parsed_tool_result"),
-        "tool_result": state.get("tool_result"),
+        "parsed_tool_result": compact_prompt_value(
+            state.get("parsed_tool_result"), settings.ai_tool_result_prompt_max_chars
+        ),
+        "tool_result": compact_prompt_value(state.get("tool_result"), settings.ai_tool_result_prompt_max_chars),
         "result_status": state.get("result_status"),
         "error": state.get("error"),
     }
-    response = await llm.ainvoke(
+    response = await invoke_llm(
+        llm,
         [
             ("system", RESPONSE_FORMATTER_PROMPT),
             ("human", json.dumps(formatter_context, default=str)),
-        ]
+        ],
+        operation="response_formatter",
     )
     return _with_chat_history(state, str(response.content))

@@ -93,6 +93,13 @@ DOMAIN_RULES = [
             "amount",
             "revenue",
             "outstanding",
+            "membership",
+            "memberships",
+            "plan",
+            "plans",
+            "benefit",
+            "benefits",
+            "amc",
         },
     },
 ]

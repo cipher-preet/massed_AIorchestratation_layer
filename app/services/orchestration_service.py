@@ -3,6 +3,7 @@ from typing import Any, Dict, List
 from uuid import uuid4
 
 from app.agents.erp_analytics_agent.graph import erp_analytics_graph
+from app.config.settings import settings
 from app.schemas.chat_schema import ChatRequest
 from app.services.chat_history_store import chat_history_store
 
@@ -51,7 +52,7 @@ class OrchestrationService:
                 user_id=request.user_id,
                 space_id=request.space_id,
                 conversation_id=conversation_id,
-                limit=20,
+                limit=max(6, settings.ai_conversation_reference_messages),
             ),
         }
         config = {

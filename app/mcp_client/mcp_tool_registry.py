@@ -1,10 +1,24 @@
 from typing import Any, Dict, List, Optional
+from time import monotonic
 
 from app.mcp_client.node_mcp_client import node_mcp_client
 
 
+_TOOLS_CACHE: List[Dict[str, Any]] | None = None
+_TOOLS_CACHE_EXPIRES_AT = 0.0
+_TOOLS_CACHE_TTL_SECONDS = 300
+
+
 async def list_tools() -> List[Dict[str, Any]]:
-    return await node_mcp_client.list_tools()
+    global _TOOLS_CACHE, _TOOLS_CACHE_EXPIRES_AT
+
+    now = monotonic()
+    if _TOOLS_CACHE is not None and now < _TOOLS_CACHE_EXPIRES_AT:
+        return _TOOLS_CACHE
+
+    _TOOLS_CACHE = await node_mcp_client.list_tools()
+    _TOOLS_CACHE_EXPIRES_AT = now + _TOOLS_CACHE_TTL_SECONDS
+    return _TOOLS_CACHE
 
 
 async def _has_tool(tool_name: str) -> bool:

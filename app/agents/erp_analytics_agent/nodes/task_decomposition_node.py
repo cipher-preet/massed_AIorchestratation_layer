@@ -5,6 +5,12 @@ from typing import Any
 from app.agents.erp_analytics_agent.prompts import TASK_DECOMPOSITION_PROMPT
 from app.agents.erp_analytics_agent.state import AgentState
 from app.config.settings import settings
+from app.core.cost_optimization import (
+    compact_chat_history,
+    compact_conversation_reference,
+    compact_prompt_value,
+    invoke_llm,
+)
 from app.core.llm import get_llm
 from app.utils.json_utils import extract_json_object
 
@@ -303,18 +309,20 @@ async def task_decomposition_node(state: AgentState) -> AgentState:
     llm = get_llm(model=settings.openai_planner_model)
     prompt_context = {
         "user_message": state["message"],
-        "chat_history": (state.get("chat_history") or [])[-10:],
-        "conversation_reference": state.get("conversation_reference"),
+        "chat_history": compact_chat_history(state.get("chat_history")),
+        "conversation_reference": compact_conversation_reference(state.get("conversation_reference")),
         "schema_domain": state.get("schema_domain"),
-        "schema_catalog": state.get("schema_catalog"),
-        "relationship_map": state.get("relationship_map"),
+        "schema_catalog": compact_prompt_value(state.get("schema_catalog"), settings.ai_schema_prompt_max_chars),
+        "relationship_map": compact_prompt_value(state.get("relationship_map"), settings.ai_schema_prompt_max_chars),
     }
     try:
-        response = await llm.ainvoke(
+        response = await invoke_llm(
+            llm,
             [
                 ("system", TASK_DECOMPOSITION_PROMPT),
                 ("human", json.dumps(prompt_context, default=str)),
-            ]
+            ],
+            operation="task_decomposition",
         )
         parsed = extract_json_object(str(response.content))
     except Exception:

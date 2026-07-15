@@ -3,6 +3,7 @@ import re
 
 from app.agents.erp_analytics_agent.prompts import INTENT_PROMPT
 from app.agents.erp_analytics_agent.state import AgentState
+from app.core.cost_optimization import compact_chat_history, compact_conversation_reference, invoke_llm
 from app.core.llm import get_llm
 from app.utils.json_utils import extract_json_object
 
@@ -85,7 +86,8 @@ async def intent_node(state: AgentState) -> AgentState:
 
     llm = get_llm()
     try:
-        response = await llm.ainvoke(
+        response = await invoke_llm(
+            llm,
             [
                 ("system", INTENT_PROMPT),
                 (
@@ -93,8 +95,8 @@ async def intent_node(state: AgentState) -> AgentState:
                     json.dumps(
                         {
                             "user_request": message,
-                            "chat_history": chat_history[-10:],
-                            "conversation_reference": state.get("conversation_reference"),
+                            "chat_history": compact_chat_history(chat_history),
+                            "conversation_reference": compact_conversation_reference(state.get("conversation_reference")),
                             "previous_response": {
                                 "kind": state.get("last_response_kind"),
                                 "content": state.get("last_response_content"),
@@ -103,7 +105,8 @@ async def intent_node(state: AgentState) -> AgentState:
                         default=str,
                     ),
                 ),
-            ]
+            ],
+            operation="intent",
         )
         parsed = extract_json_object(str(response.content))
     except Exception:
